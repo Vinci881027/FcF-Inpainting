@@ -140,13 +140,13 @@ class EncoderNetwork(torch.nn.Module):
         feats = {}
         for res in self.block_resolutions:
             block = getattr(self, f'b{res}')
-            x, img, feat = block(x, img, **block_kwargs)
+            x, img, feat, mask = block(x, img, mask, **block_kwargs) # Modified: add mask
             feats[res] = feat
 
         cmap = None
         if self.c_dim > 0:
             cmap = self.mapping(None, c)
-        x, const_e = self.b4(x, cmap)
+        x, const_e = self.b4(x, mask, cmap) # Modified: add mask
         feats[4] = const_e
 
         B, _ = x.shape
