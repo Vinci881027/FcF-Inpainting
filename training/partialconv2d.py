@@ -41,6 +41,11 @@ class PartialConv2d(nn.Conv2d):
         self.mask_ratio = None
 
     def forward(self, input, mask_in=None):
+        ## Modified ##
+        dtype = input.type()
+        input = input.float()
+        ## Modified ##
+        
         assert len(input.shape) == 4
         if mask_in is not None or self.last_size != tuple(input.shape):
             self.last_size = tuple(input.shape)
@@ -57,7 +62,12 @@ class PartialConv2d(nn.Conv2d):
                         mask = torch.ones(1, 1, input.data.shape[2], input.data.shape[3]).to(input)
                 else:
                     mask = mask_in
-                        
+                
+                ## Modified ##
+                if mask.type() != input.type():
+                    mask = mask.to(input)
+                ## Modified ##
+                
                 self.update_mask = F.conv2d(mask, self.weight_maskUpdater, bias=None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=1)
 
                 # for mixed precision training, change 1e-8 to 1e-6
@@ -65,7 +75,6 @@ class PartialConv2d(nn.Conv2d):
                 # self.mask_ratio = torch.max(self.update_mask)/(self.update_mask + 1e-8)
                 self.update_mask = torch.clamp(self.update_mask, 0, 1)
                 self.mask_ratio = torch.mul(self.mask_ratio, self.update_mask)
-
 
         raw_out = super(PartialConv2d, self).forward(torch.mul(input, mask) if mask_in is not None else input)
 
@@ -76,11 +85,10 @@ class PartialConv2d(nn.Conv2d):
         else:
             output = torch.mul(raw_out, self.mask_ratio)
 
-
         if self.return_mask:
-            return output, self.update_mask
+            return output.type(dtype), self.update_mask.type(dtype)  # Modified: change type
         else:
-            return output
+            return output.type(dtype)  # Modified: change type
         
 
 img = torch.randn(1, 3, 256, 256)

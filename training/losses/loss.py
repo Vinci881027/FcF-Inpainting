@@ -34,7 +34,7 @@ class StyleGAN2Loss(Loss):
 
     def run_G(self, r_img, mask, c, sync):
         with misc.ddp_sync(self.G_encoder, sync):
-            x_global, z, feats = self.G_encoder(r_img, c)
+            x_global, z, feats = self.G_encoder(r_img, mask, c)  # Modified: add mask
         with misc.ddp_sync(self.G_mapping, sync):
             ws = self.G_mapping(z, c)
             if self.style_mixing_prob > 0:

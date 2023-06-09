@@ -1,4 +1,4 @@
-﻿﻿# Modified from https://github.com/NVlabs/stylegan2-ada-pytorch
+# Modified from https://github.com/NVlabs/stylegan2-ada-pytorch
 
 import numpy as np
 import torch
@@ -135,7 +135,7 @@ class EncoderNetwork(torch.nn.Module):
             self.mapping = MappingNetwork(z_dim=0, c_dim=c_dim, w_dim=cmap_dim, num_ws=None, w_avg_beta=None, **mapping_kwargs)
         self.b4 = EncoderEpilogue(channels_dict[4], cmap_dim=cmap_dim, z_dim=z_dim * 2, resolution=4, **epilogue_kwargs, **common_kwargs)
 
-    def forward(self, img, c, **block_kwargs):
+    def forward(self, img, mask, c, **block_kwargs):  # Modified: add mask
         x = None
         feats = {}
         for res in self.block_resolutions:
@@ -244,7 +244,7 @@ class Generator(torch.nn.Module):
 
     def forward(self, img, c, fname=None, truncation_psi=1, truncation_cutoff=None, **synthesis_kwargs):
         mask = img[:, 0].unsqueeze(1)
-        x_global, z, feats = self.encoder(img, c)
+        x_global, z, feats = self.encoder(img, mask, c)  # Modified: add mask
         ws = self.mapping(z, c, truncation_psi=truncation_psi, truncation_cutoff=truncation_cutoff)
         img = self.synthesis(x_global, mask, feats, ws, fname=fname, **synthesis_kwargs)
         return img
