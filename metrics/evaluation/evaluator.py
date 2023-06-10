@@ -5,7 +5,7 @@ from typing import Dict
 import numpy as np
 import torch
 import torch.nn as nn
-import tqdm
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 from metrics.evaluation.utils import move_to_device
@@ -53,7 +53,7 @@ class InpaintingEvaluator():
             interval_names.append("{0}-{1}%".format(start_percent, end_percent))
 
         groups = []
-        for batch in tqdm.auto.tqdm(self.dataloader, desc='edges'):
+        for batch in tqdm(self.dataloader, desc='edges'):
             mask = batch['mask']
             batch_size = mask.shape[0]
             area = mask.to(self.device).reshape(batch_size, -1).mean(dim=-1)
@@ -78,11 +78,11 @@ class InpaintingEvaluator():
         else:
             groups = None
 
-        for score_name, score in tqdm.auto.tqdm(self.scores.items(), desc='scores'):
+        for score_name, score in tqdm(self.scores.items(), desc='scores'):
             score.to(self.device)
             with torch.no_grad():
                 score.reset()
-                for batch in tqdm.auto.tqdm(self.dataloader, desc=score_name, leave=False):
+                for batch in tqdm(self.dataloader, desc=score_name, leave=False):
                     batch = move_to_device(batch, self.device)
                     image_batch, mask_batch = batch['image'], batch['mask']
                     if self.clamp_image_range is not None:
@@ -132,7 +132,7 @@ class InpaintingEvaluator():
             score.to(device)
             with torch.no_grad():
                 score.reset()
-                for _, batch in tqdm.auto.tqdm(enumerate(dataloader, 0), total=len(dataloader), desc=score_name + f' on GPU: {device}'):
+                for _, batch in tqdm(enumerate(dataloader, 0), total=len(dataloader), desc=score_name + f' on GPU: {device}'):
                     batch = move_to_device(batch, device)
                     image_batch, mask_batch = batch['image'], batch['mask']
                     if self.clamp_image_range is not None:
