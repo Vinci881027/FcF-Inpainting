@@ -24,7 +24,7 @@ class MakeManyMasksWrapper:
 
 
 def process_images(src_images, indir, outdir, config):
-    mask_generator = SegmentationMask(**config.mask_generator_kwargs)
+    mask_generator = SegmentationMask(**config.mask_gen_kwargs)
 
     max_tamper_area = config.get('max_tamper_area', 1)
 
