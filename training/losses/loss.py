@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import torch
 from torch_utils import training_stats
 from torch_utils import misc

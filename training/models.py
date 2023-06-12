@@ -12,8 +12,6 @@ from icecream import ic
 import torch.nn.functional as F
 from training.ffc import FFCResnetBlock, ConcatTupleLayer
 
-from training.partialconv2d import PartialConv2d
-
 #----------------------------------------------------------------------------
 
 @misc.profiled_function
@@ -164,7 +162,6 @@ class Conv2dLayer(torch.nn.Module):
         x = bias_act.bias_act(x, b, act=self.activation, gain=act_gain, clamp=act_clamp)
         return x
 
-
 #----------------------------------------------------------------------------
 
 @persistence.persistent_class
@@ -230,26 +227,14 @@ class EncoderEpilogue(torch.nn.Module):
         self.img_channels = img_channels
         self.architecture = architecture
 
-        ## Modified ##
-
-        # if architecture == 'skip':
-        #     self.fromrgb = Conv2dLayer(self.img_channels, in_channels, kernel_size=1, activation=activation)
-        # self.mbstd = MinibatchStdLayer(group_size=mbstd_group_size, num_channels=mbstd_num_channels) if mbstd_num_channels > 0 else None
-        # self.conv = Conv2dLayer(in_channels + mbstd_num_channels, in_channels, kernel_size=3, activation=activation, conv_clamp=conv_clamp)
-        
         if architecture == 'skip':
-            self.fromrgb = PartialConv2d(in_channels=self.img_channels, out_channels=in_channels, 
-                                         kernel_size=1, padding=0, return_mask=True,)
+            self.fromrgb = Conv2dLayer(self.img_channels, in_channels, kernel_size=1, activation=activation)
         self.mbstd = MinibatchStdLayer(group_size=mbstd_group_size, num_channels=mbstd_num_channels) if mbstd_num_channels > 0 else None
-        self.conv = PartialConv2d(in_channels=in_channels + mbstd_num_channels, out_channels=in_channels,
-                                  kernel_size=3, padding=1, return_mask=True,)
-        ## Modified ##
-
-
+        self.conv = Conv2dLayer(in_channels + mbstd_num_channels, in_channels, kernel_size=3, activation=activation, conv_clamp=conv_clamp)
         self.fc = FullyConnectedLayer(in_channels * (resolution ** 2), z_dim, activation=activation)
         self.dropout = torch.nn.Dropout(p=0.5)
 
-    def forward(self, x, mask, cmap, force_fp32=False): # Modified
+    def forward(self, x, cmap, force_fp32=False):
         misc.assert_shape(x, [None, self.in_channels, self.resolution, self.resolution]) # [NCHW]
         _ = force_fp32 # unused
         dtype = torch.float32
@@ -257,11 +242,10 @@ class EncoderEpilogue(torch.nn.Module):
 
         # FromRGB.
         x = x.to(dtype=dtype, memory_format=memory_format)
-
         # Main layers.
         if self.mbstd is not None:
             x = self.mbstd(x)
-        const_e, _ = self.conv(x, mask) # Modified
+        const_e = self.conv(x)
         x = self.fc(const_e.flatten(1))
         x = self.dropout(x)
 
@@ -292,7 +276,6 @@ class EncoderBlock(torch.nn.Module):
         fp16_channels_last  = False,        # Use channels-last memory format with FP16?
         freeze_layers       = 0,            # Freeze-D: Number of layers to freeze.
     ):
-
         assert in_channels in [0, tmp_channels]
         assert architecture in ['orig', 'skip', 'resnet']
         super().__init__()
@@ -314,37 +297,21 @@ class EncoderBlock(torch.nn.Module):
                 yield trainable
         trainable_iter = trainable_gen()
 
-
-        ### Modified ###
-
-        # if in_channels == 0:
-        #     self.fromrgb = Conv2dLayer(self.img_channels, tmp_channels, kernel_size=1, activation=activation,
-        #         trainable=next(trainable_iter), conv_clamp=conv_clamp, channels_last=self.channels_last)
-
-        # self.conv0 = Conv2dLayer(tmp_channels, tmp_channels, kernel_size=3, activation=activation,
-        #     trainable=next(trainable_iter), conv_clamp=conv_clamp, channels_last=self.channels_last)
-
-        # self.conv1 = Conv2dLayer(tmp_channels, out_channels, kernel_size=3, activation=activation, down=2,
-        #     trainable=next(trainable_iter), resample_filter=resample_filter, conv_clamp=conv_clamp, channels_last=self.channels_last)
-
-        # if architecture == 'resnet':
-        #     self.skip = Conv2dLayer(tmp_channels, out_channels, kernel_size=1, bias=False, down=2,
-        #         trainable=next(trainable_iter), resample_filter=resample_filter, channels_last=self.channels_last)
-
         if in_channels == 0:
-            self.fromrgb = PartialConv2d(in_channels=self.img_channels, out_channels=tmp_channels, 
-                                         kernel_size=1, padding=0, return_mask=True,)
-        self.conv0 = PartialConv2d(in_channels=tmp_channels, out_channels=tmp_channels, 
-                                   kernel_size=3, padding=1, return_mask=True,)
-        self.conv1 = PartialConv2d(in_channels=tmp_channels, out_channels=out_channels, 
-                                   kernel_size=3, stride=2, padding=1, return_mask=True,)
+            self.fromrgb = Conv2dLayer(self.img_channels, tmp_channels, kernel_size=1, activation=activation,
+                trainable=next(trainable_iter), conv_clamp=conv_clamp, channels_last=self.channels_last)
+
+        self.conv0 = Conv2dLayer(tmp_channels, tmp_channels, kernel_size=3, activation=activation,
+            trainable=next(trainable_iter), conv_clamp=conv_clamp, channels_last=self.channels_last)
+
+        self.conv1 = Conv2dLayer(tmp_channels, out_channels, kernel_size=3, activation=activation, down=2,
+            trainable=next(trainable_iter), resample_filter=resample_filter, conv_clamp=conv_clamp, channels_last=self.channels_last)
+
         if architecture == 'resnet':
-            self.skip = PartialConv2d(in_channels=tmp_channels, out_channels=out_channels, 
-                                      kernel_size=1, stride=2, padding=1, return_mask=True,)
+            self.skip = Conv2dLayer(tmp_channels, out_channels, kernel_size=1, bias=False, down=2,
+                trainable=next(trainable_iter), resample_filter=resample_filter, channels_last=self.channels_last)
 
-        ### Modified ###
-
-    def forward(self, x, img, mask, force_fp32=False):
+    def forward(self, x, img, force_fp32=False):
         dtype = torch.float16 if self.use_fp16 and not force_fp32 else torch.float32
         memory_format = torch.channels_last if self.channels_last and not force_fp32 else torch.contiguous_format
 
@@ -353,30 +320,28 @@ class EncoderBlock(torch.nn.Module):
             misc.assert_shape(x, [None, self.in_channels, self.resolution, self.resolution])
             x = x.to(dtype=dtype, memory_format=memory_format)
 
-        ## Modified: add mask ##
         # FromRGB.
         if self.in_channels == 0:
             misc.assert_shape(img, [None, self.img_channels, self.resolution, self.resolution])
             img = img.to(dtype=dtype, memory_format=memory_format)
-            y, mask = self.fromrgb(img, mask) 
+            y = self.fromrgb(img)
             x = x + y if x is not None else y
             img = upfirdn2d.downsample2d(img, self.resample_filter) if self.architecture == 'skip' else None
 
         # Main layers.
         if self.architecture == 'resnet':
-            y, _ = self.skip(x, mask)
-            x, mask = self.conv0(x, mask)
+            y = self.skip(x, gain=np.sqrt(0.5))
+            x = self.conv0(x)
             feat = x.clone()
-            x, mask = self.conv1(x, mask)
+            x = self.conv1(x, gain=np.sqrt(0.5))
             x = y.add_(x)
         else:
-            x, mask = self.conv0(x, mask)
+            x = self.conv0(x)
             feat = x.clone()
-            x, mask = self.conv1(x, mask)
+            x = self.conv1(x)
 
         assert x.dtype == dtype
-        return x, img, feat, mask
-        ## Modified: add mask ##
+        return x, img, feat
 
 #----------------------------------------------------------------------------
 

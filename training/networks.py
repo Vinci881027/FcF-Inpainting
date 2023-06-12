@@ -1,10 +1,11 @@
-# Modified from https://github.com/NVlabs/stylegan2-ada-pytorch
+﻿# Modified from https://github.com/NVlabs/stylegan2-ada-pytorch
 
 import numpy as np
 import torch
 from torch_utils import misc
 from torch_utils import persistence
 from training.models import *
+from training.partialconv2d import PartialConv2d
 
 #----------------------------------------------------------------------------
 
@@ -122,6 +123,13 @@ class EncoderNetwork(torch.nn.Module):
 
         common_kwargs = dict(img_channels=img_channels, architecture=architecture, conv_clamp=conv_clamp)
         cur_layer_idx = 0
+
+        ## Modified ##
+        self.partial_conv0 = PartialConv2d(in_channels=img_channels+1, out_channels=img_channels+1, kernel_size=3, padding=1, return_mask=True)
+        self.partial_conv1 = PartialConv2d(in_channels=img_channels+1, out_channels=img_channels+1, kernel_size=3, padding=1, return_mask=True)
+        self.partial_conv2 = PartialConv2d(in_channels=img_channels+1, out_channels=img_channels+1, kernel_size=3, padding=1, return_mask=True)
+        ## Modified ##
+
         for res in self.block_resolutions:
             in_channels = channels_dict[res] if res < img_resolution else 0
             tmp_channels = channels_dict[res]
@@ -138,15 +146,21 @@ class EncoderNetwork(torch.nn.Module):
     def forward(self, img, mask, c, **block_kwargs):  # Modified: add mask
         x = None
         feats = {}
+
+        ## Modified ##  
+        img, mask = self.partial_conv0(img, mask)
+        img, mask = self.partial_conv1(img, mask)
+        img, mask = self.partial_conv2(img, mask)
+        ## Modified ##
+
         for res in self.block_resolutions:
             block = getattr(self, f'b{res}')
-            x, img, feat, mask = block(x, img, mask, **block_kwargs) # Modified: add mask
+            x, img, feat = block(x, img, **block_kwargs)
             feats[res] = feat
-
         cmap = None
         if self.c_dim > 0:
             cmap = self.mapping(None, c)
-        x, const_e = self.b4(x, mask, cmap) # Modified: add mask
+        x, const_e = self.b4(x, cmap)
         feats[4] = const_e
 
         B, _ = x.shape
